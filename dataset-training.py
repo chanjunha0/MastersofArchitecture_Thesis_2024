@@ -5,7 +5,7 @@ import torch                                 # pytorch
 from torch_geometric.data import Data        # to work with graph data
 
 # Define the mode at the start of your code
-pipeline_mode = "training"  # Change to "prediction" when needed
+pipeline_mode = "training"  # Change to "prediction/training" when needed
 
 # # Csv Training Data
 # run_num = 'run_4'
@@ -412,10 +412,12 @@ def process_run(run_num):
 
 
 # Loop to process a range of runs
-for i in range(21, 37):  
+for i in range(36, 55):  
     run_number = f'run_{i}'
     print("-" * 50)
     print(f"Processing {run_number}...")
     process_run(run_number)
     print(f"Completed processing {run_number}.\n")
     print("-" * 50)
+
+print("All runs processed.")

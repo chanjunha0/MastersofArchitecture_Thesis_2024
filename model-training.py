@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from math import sqrt
 import matplotlib.pyplot as plt
 import time
+import csv
+from pytorch_models import SimpleGCN, SimpleGAT, SimpleEdgeCNN
 
 # Set folder path for pytorch data objects
 folder_path = r'data\torch_data_object_training'
@@ -16,6 +18,11 @@ labels_info_path = r'data\torch_data_object_training\labels_info.csv'
 
 model_path = r'data\1_pytorch_model\model.pth' 
 
+# File path to save losses
+losses_file_path = r'data\training_and_test_losses.csv'
+
+# Specify model type
+model_type = SimpleGCN  # Choose from 'SimpleGCN', 'SimpleGAT', 'SimpleEdgeCNN', 'PointGNNConv', 
 
 ## Functions
 
@@ -38,7 +45,7 @@ def load_graph_data_objects(folder_path, start_run, end_run):
     for expected_file in expected_files:
         graph_path = os.path.join(folder_path, expected_file)
         if os.path.exists(graph_path):
-            print(f"Loading graph data from: {graph_path}")
+            #print(f"Loading graph data from: {graph_path}")
             graph_data = torch.load(graph_path)
             if isinstance(graph_data, Data):
                 graph_data_objects.append(graph_data)
@@ -75,42 +82,37 @@ def train(model, optimizer, data, mask):
     model.train()
     optimizer.zero_grad()
     
-    out = model(data)  # Model outputs for all nodes
+    # Directly pass x and edge_index to the model, valid for all model types
+    out = model(data.x, data.edge_index)
     out = out.squeeze()
     
-    # Mask to identify non-placeholder labels
-    # Adjust this condition based on your placeholder_value and task
+    # Continue with masking and loss computation as before
     valid_label_mask = data.y != placeholder_value
-    
-    # Apply both the extended mask and valid_label_mask to filter predictions and labels
     valid_out = out[mask & valid_label_mask]
     valid_labels = data.y[mask & valid_label_mask]
-    
-    loss = F.mse_loss(valid_out, valid_labels)  # Calculate loss on non-placeholder, valid data points only
+    loss = F.mse_loss(valid_out, valid_labels)
     
     loss.backward()
     optimizer.step()
     
     return loss.item()
 
+
 def test(model, data, mask):
     model.eval()
     with torch.no_grad():
-        out = model(data)
-        out = out.squeeze()  # Ensure the output matches expected dimensions
-
-        # Ensure the mask is for the full set of nodes, adjusting if it was originally for labeled nodes only
+        # Directly pass x and edge_index to the model, valid for all model types
+        out = model(data.x, data.edge_index)
+        out = out.squeeze()
+        
+        # Continue with mask adjustment and loss computation as before
         if mask.size(0) != out.size(0):
-            # This assumes the original mask size corresponds to the number of labeled nodes
-            # and needs to be extended to match the full set of nodes (similar to what was done for training)
             extended_mask = torch.cat((mask, torch.zeros(data.num_nodes - mask.size(0), dtype=torch.bool, device=mask.device)))
         else:
             extended_mask = mask
 
-        # Apply the extended mask to filter predictions and labels for loss calculation
         valid_out = out[extended_mask]
         valid_labels = data.y[extended_mask]
-        
         test_loss = F.mse_loss(valid_out, valid_labels).item()
 
     return test_loss
@@ -120,46 +122,12 @@ def test(model, data, mask):
 
 
 
-## Classes
-
-class SimpleGCN(torch.nn.Module):
-    def __init__(self, num_node_features, num_classes):
-        '''
-        Initialises a model that processes graph-structured data using 
-        simple two-layer GCN architecture.
-        
-        Args:
-        num_node_features = number of features each node in the input graph has
-        num_classes = number of output classes
-        '''
-        super(SimpleGCN, self).__init__()
-        self.conv1 = GCNConv(num_node_features, 16)  # First GCN layer
-        self.conv2 = GCNConv(16, num_classes)        # Second GCN layer
-
-    def forward(self, data):
-        '''
-        Defines the forward pass of the model
-
-        Args:
-        data = object containing graph data
-        '''
-        x, edge_index = data.x, data.edge_index    # Extract node features and graph structure
-        x = self.conv1(x, edge_index)    # Apply the first GCN convolution layer
-        x = F.relu(x)  # Apply the ReLU activation function to the input tensor x
-        x = F.dropout(x, training=self.training) # Apply dropout regularisation to reduce overfitting during training
-        x = self.conv2(x, edge_index) # Apply the second GCN convolution layer
-        
-        return x  # model's predictions for each node 
-    
-
-
-
-
 
 
 
 # Record Start Time
 start_time = time.time()
+print(start_time)
 
 # SPECIFY THE RANGE OF PT HERE
 start_run, end_run = 1,54   
@@ -184,7 +152,9 @@ num_classes = 1  # Set the number of output classes (no changes needed)
 # Adjust the criterion according to your task
 criterion = torch.nn.MSELoss()  
 
-model = load_or_initialize_model(model_path, SimpleGCN, num_node_features, num_classes)
+# Specifiy Pytorch Model Type
+model = load_or_initialize_model(model_path, model_type, num_node_features, num_classes)
+print(f'Loaded {model_type} for training')
 
 # Using Adam optimizer, lr = learning rate
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -196,6 +166,8 @@ if device.type == 'cuda':
     print(f'Model is using GPU: {torch.cuda.get_device_name(device)}')
 else:
     print('Model is using CPU')
+
+extended_test_mask = None
 
 
 
@@ -220,14 +192,14 @@ for idx, data in enumerate(graph_data_objects):
             num_unlabeled_nodes = num_total_nodes - data.y.size(0)
             
             # Create a tensor of placeholders for unlabeled nodes
-            placeholders = torch.full((num_unlabeled_nodes,), placeholder_value, dtype=data.y.dtype)
+            placeholders = torch.full((num_unlabeled_nodes,), placeholder_value, dtype=data.y.dtype, device=device)
             
             # Extend data.y
             data.y = torch.cat((data.y, placeholders))
 
         # Generate initial masks for labeled nodes only
-        train_mask = torch.zeros(num_labeled_nodes, dtype=torch.bool)
-        test_mask = torch.zeros(num_labeled_nodes, dtype=torch.bool)
+        train_mask = torch.zeros(num_labeled_nodes, dtype=torch.bool, device=device)
+        test_mask = torch.zeros(num_labeled_nodes, dtype=torch.bool, device=device)
 
         # Randomly permute indices of labeled nodes to split into training and testing
         indices = torch.randperm(num_labeled_nodes)
@@ -238,8 +210,8 @@ for idx, data in enumerate(graph_data_objects):
         test_mask[indices[num_train:]] = True
 
         # Extend masks to cover all nodes
-        extended_train_mask = torch.cat((train_mask, torch.ones(num_total_nodes - num_labeled_nodes, dtype=torch.bool)))
-        extended_test_mask = torch.cat((test_mask, torch.zeros(num_total_nodes - num_labeled_nodes, dtype=torch.bool)))
+        extended_train_mask = torch.cat((train_mask, torch.ones(num_total_nodes - num_labeled_nodes, dtype=torch.bool, device=device)))
+        extended_test_mask = torch.cat((test_mask, torch.zeros(num_total_nodes - num_labeled_nodes, dtype=torch.bool, device=device)))
 
         # Training and testing loop
         for epoch in range(100):  # Adjust the number of epochs as needed
@@ -265,8 +237,9 @@ for idx, data in enumerate(graph_data_objects):
 
 
 ## Print Test Loss
-test_loss = test(model, data, test_mask)
-print(f'Test Loss: {test_loss:.2f}')
+if extended_test_mask is not None:
+    test_loss = test(model, data, extended_test_mask)  # Use it here
+    print(f'Test Loss: {test_loss:.2f}')
 
 ## Save the Model
 file_path = rf'data\1_pytorch_model\model.pth'  
@@ -282,6 +255,19 @@ training_duration = end_time - start_time
 minutes, seconds = divmod(training_duration, 60)
 hours, minutes = divmod(minutes, 60)
 print(f"Training took {int(hours)} hours, {int(minutes)} minutes, and {seconds} seconds.")
+
+# Open the file in write mode
+with open(losses_file_path, 'w', newline='') as file:
+    writer = csv.writer(file)
+    
+    # Write the header
+    writer.writerow(['Epoch', 'Train Loss', 'Test Loss'])
+    
+    # Assuming you have the same number of training and testing loss entries
+    for epoch in range(len(train_losses)):
+        writer.writerow([epoch + 1, train_losses[epoch], test_losses[epoch]])
+
+print(f"Losses saved to {losses_file_path}")
 
 ## Visualise Loss function
 plt.plot(train_losses, label='Training Loss')
