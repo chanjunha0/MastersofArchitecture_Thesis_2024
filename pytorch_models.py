@@ -15,67 +15,113 @@ from torch_geometric.utils import _spmm, sparse
 
 ## Classes
 
+
+# class SimpleGCN(torch.nn.Module):
+#     def __init__(self, num_node_features, num_classes, dropout_rate=0.5):
+#         """
+#         Initializes a model that processes graph-structured data using
+#         a simple two-layer GCN architecture.
+
+#         Args:
+#             num_node_features: Number of features each node in the input graph has.
+#             num_classes: Number of output classes.
+#             dropout_rate: Probability of an element to be zeroed.
+#         """
+#         super(SimpleGCN, self).__init__()
+#         self.conv1 = GCNConv(num_node_features, 16)  # First GCN layer
+#         self.conv2 = GCNConv(16, num_classes)  # Second GCN layer
+#         self.dropout_rate = dropout_rate  # Dropout rate
+
+#     def forward(self, x, edge_index):
+#         """
+#         Defines the forward pass of the model.
+
+#         Args:
+#             x: Node features of shape [num_nodes, num_node_features].
+#             edge_index: Graph connectivity in COO format with shape [2, num_edges].
+#         """
+#         x = self.conv1(x, edge_index)  # Apply the first GCN convolution layer
+#         x = F.relu(x)  # Apply the ReLU activation function
+#         x = F.dropout(x, p=self.dropout_rate, training=self.training)  # Apply dropout
+#         x = self.conv2(x, edge_index)  # Apply the second GCN convolution layer
+
+#         return x  # Model's predictions for each node
+
+
 class SimpleGCN(torch.nn.Module):
-    def __init__(self, num_node_features, num_classes):
-        '''
-        Initializes a model that processes graph-structured data using 
+    def __init__(self, num_node_features, num_classes, dropout_rate=0.5):
+        """
+        Initializes a model that processes graph-structured data using
         a simple two-layer GCN architecture.
-        
+
         Args:
-            num_node_features: Number of features each node in the input graph has
-            num_classes: Number of output classes
-        '''
+            num_node_features: Number of features each node in the input graph has.
+            num_classes: Number of output classes.
+            dropout_rate: Probability of an element to be zeroed.
+        """
         super(SimpleGCN, self).__init__()
-        self.conv1 = GCNConv(num_node_features, 16)  # First GCN layer
-        self.conv2 = GCNConv(16, num_classes)        # Second GCN layer
+        self.conv1 = GCNConv(
+            num_node_features, 32
+        )  # Increased width for the first layer
+        self.conv2 = GCNConv(32, 16)  # Additional intermediate GCN layer
+        self.conv3 = GCNConv(16, num_classes)  # Final GCN layer for predictions
+        self.dropout_rate = dropout_rate  # Dropout rate
 
     def forward(self, x, edge_index):
-        '''
+        """
         Defines the forward pass of the model.
-        
+
         Args:
-            x: Node features of shape [num_nodes, num_node_features]
-            edge_index: Graph connectivity in COO format with shape [2, num_edges]
-        '''
-        x = self.conv1(x, edge_index)    # Apply the first GCN convolution layer
-        x = F.relu(x)                    # Apply the ReLU activation function
-        x = F.dropout(x, training=self.training) # Apply dropout to reduce overfitting
-        x = self.conv2(x, edge_index)    # Apply the second GCN convolution layer
-        
+            x: Node features of shape [num_nodes, num_node_features].
+            edge_index: Graph connectivity in COO format with shape [2, num_edges].
+        """
+        x = F.relu(self.conv1(x, edge_index))  # Apply ReLU after the first GCN layer
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)  # Apply dropout
+
+        x = F.relu(self.conv2(x, edge_index))  # Apply ReLU after the second GCN layer
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)  # Apply dropout
+
+        x = self.conv3(x, edge_index)  # Final GCN layer for predictions
+
         return x  # Model's predictions for each node
+
 
 class SimpleGAT(torch.nn.Module):
     def __init__(self, num_node_features, num_classes, heads=8, dropout=0.6):
-        '''
-        Initializes a model that processes graph-structured data using 
+        """
+        Initializes a model that processes graph-structured data using
         a simple two-layer GAT architecture.
-        
+
         Args:
             num_node_features: Number of features each node in the input graph has
             num_classes: Number of output classes
             heads: Number of attention heads for the GAT layers
             dropout: Dropout rate applied to the features
-        '''
+        """
         super(SimpleGAT, self).__init__()
         self.heads = heads
         self.dropout = dropout
 
         # Define the first GAT layer
-        self.conv1 = GATConv(num_node_features, 8, heads=self.heads, dropout=self.dropout)
+        self.conv1 = GATConv(
+            num_node_features, 8, heads=self.heads, dropout=self.dropout
+        )
 
         # For the second GAT layer, multiply the number of output channels by the number of heads
         # from the first layer because they are concatenated together. Then, reduce to the number
         # of classes as output.
-        self.conv2 = GATConv(8 * self.heads, num_classes, heads=1, concat=False, dropout=self.dropout)
+        self.conv2 = GATConv(
+            8 * self.heads, num_classes, heads=1, concat=False, dropout=self.dropout
+        )
 
     def forward(self, x, edge_index):
-        '''
+        """
         Defines the forward pass of the model.
-        
+
         Args:
             x: Node features of shape [num_nodes, num_node_features]
             edge_index: Graph connectivity in COO format with shape [2, num_edges]
-        '''
+        """
         # Apply the first GAT convolution layer with ReLU activation and dropout
         x = self.conv1(x, edge_index)
         x = F.relu(x)
@@ -85,24 +131,25 @@ class SimpleGAT(torch.nn.Module):
         x = self.conv2(x, edge_index)
 
         return F.log_softmax(x, dim=1)  # Return log-softmaxed predictions
-    
+
+
 class SimpleEdgeCNN(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super(SimpleEdgeCNN, self).__init__()
         # Define the neural network (nn) to be used in EdgeConv
         # This nn takes concatenated node features and outputs transformed features
-        nn = Sequential(Linear(2 * in_channels, 64),
-                        ReLU(),
-                        Linear(64, out_channels))
-        
+        nn = Sequential(Linear(2 * in_channels, 64), ReLU(), Linear(64, out_channels))
+
         # Initialize the EdgeConv layer with the defined nn
-        self.edge_conv = EdgeConv(nn, aggr='max')  # You can change the aggregation type if needed
+        self.edge_conv = EdgeConv(
+            nn, aggr="max"
+        )  # You can change the aggregation type if needed
 
     def forward(self, x, edge_index):
         # Apply the EdgeConv operation
         x = self.edge_conv(x, edge_index)
         return x
-    
+
 
 # class SimpleLabelPropagation(MessagePassing):
 #     """
@@ -124,7 +171,7 @@ class SimpleEdgeCNN(torch.nn.Module):
 
 #     @torch.no_grad()
 #     def forward(self, x: Tensor, edge_index: Adj, mask: OptTensor = None, edge_weight: OptTensor = None) -> Tensor:
-#         # x = y refers to label information rather than traditional node features. 
+#         # x = y refers to label information rather than traditional node features.
 #         """
 #         Propagates labels through the graph for semi-supervised learning.
 
@@ -169,4 +216,3 @@ class SimpleEdgeCNN(torch.nn.Module):
 
 #     def __repr__(self) -> str:
 #         return f'{self.__class__.__name__}(num_layers={self.num_layers}, alpha={self.alpha})'
-
