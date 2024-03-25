@@ -6,7 +6,7 @@ import numpy as np
 
 # import csv
 
-run_num = "run_3"
+run_num = "run_1"
 
 # Actual simulated labels
 label_actual_df = pd.read_csv(
@@ -15,7 +15,7 @@ label_actual_df = pd.read_csv(
 
 # Predicted labels
 label_predict_df = pd.read_csv(
-    f"data/2_prediction_testing/sensor_predictions_{run_num}.csv", header=None
+    f"data/2_prediction_testing/averaged_predictions_{run_num}.csv", header=None
 )
 print("Files imported")
 

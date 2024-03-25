@@ -126,7 +126,7 @@ start_time = time.time()
 print(start_time)
 
 # SPECIFY THE RANGE OF PT HERE
-ranges = [(73, 108)]  # Specify the range of runs to load
+ranges = [(1, 180)]  # Specify the range of runs to load
 
 # Load graph data objects
 graph_data_objects = load_graph_data_objects(folder_path, ranges=ranges)

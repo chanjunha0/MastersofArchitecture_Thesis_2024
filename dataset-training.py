@@ -1,24 +1,39 @@
-# import libraries
 import os
 import pandas as pd
-import torch  # pytorch
-from torch_geometric.data import Data  # to work with graph data
+import torch
+from torch_geometric.data import Data
+import json
 
 # Define the mode at the start of your code
 pipeline_mode = "training"  # Change to "prediction/training" when needed
+norm_params_path = r"C:\Users\colin\OneDrive\Desktop\Thesis Part 2\thesis - simulation\data\6_normalisation"
 
-# # Csv Training Data
-# run_num = 'run_4'
+# Load normalization parameters
+norm_params = {
+    "building": json.load(
+        open(os.path.join(norm_params_path, "building_norm_params.json"), "r")
+    ),
+    "distance": json.load(
+        open(os.path.join(norm_params_path, "distance_norm_params.json"), "r")
+    ),
+    "label": json.load(
+        open(os.path.join(norm_params_path, "label_norm_params.json"), "r")
+    ),
+    "sensor": json.load(
+        open(os.path.join(norm_params_path, "sensor_norm_params.json"), "r")
+    ),
+}
+
+
+# Function to normalize given columns of a DataFrame with specified mean and std
+def normalize_df(df, means, stds):
+    return (df - means) / stds
 
 
 def process_run(run_num):
     file_path_training = rf"data\csv_training\{run_num}"
-
-    # Pytorch Training Path
-    filename_training = rf"data/torch_data_object_training/{run_num}.pt"
-
-    # Pytorch Prediction Path
-    filename_prediction = rf"data/torch_data_object_prediction/{run_num}.pt"
+    filename_training = rf"data\torch_data_object_training\{run_num}.pt"
+    filename_prediction = rf"data\torch_data_object_prediction\{run_num}.pt"
 
     # Csv Files to Import
     file_names = [
@@ -41,6 +56,37 @@ def process_run(run_num):
         "vertex_length_glass",
         "vertex_length_wood",
     ]
+
+    # Load and normalize CSV data
+    dfs = {}  # Store normalized DataFrames here
+
+    for file_name in file_names:
+        full_path = os.path.join(file_path_training.format(run_num=run_num), file_name)
+        # Check if file exists and is not empty
+        if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
+            df = pd.read_csv(full_path, header=None)
+
+            # Determine which normalization parameters to use based on the file type
+            if "sensor" in file_name:
+                df.iloc[:, 0:3] = (
+                    df.iloc[:, 0:3] - norm_params["sensor"]["mean"]
+                ) / norm_params["sensor"]["std"]
+            elif file_name == "label.csv":
+                df.iloc[:, 0] = (
+                    df.iloc[:, 0] - norm_params["label"]["mean"][0]
+                ) / norm_params["label"]["std"][0]
+            elif "distance" in file_name:
+                df.iloc[:, 0] = (
+                    df.iloc[:, 0] - norm_params["distance"]["mean"][0]
+                ) / norm_params["distance"]["std"][0]
+            elif "building" in file_name:
+                df.iloc[:, 0:3] = (
+                    df.iloc[:, 0:3] - norm_params["building"]["mean"]
+                ) / norm_params["building"]["std"]
+
+            dfs[file_name.split(".")[0]] = df
+        else:
+            print(f"Skipped missing or empty file: {full_path}")
 
     # Dictionary mapping DataFrame names to material names
     df_material_map = {
@@ -317,7 +363,6 @@ def process_run(run_num):
 
     # Call function to import csv and convert to dataframe, storing them in a dictionary
     dfs = load_csv_files_as_dict(file_path_training, file_names)
-    # Access a specific DataFrame, e.g., sensor_df = dfs['sensor_df']
 
     # Import Material Library and append to dfs dictionary of dataframes
     material_df = pd.read_csv(r"data\material\material_library.csv")
@@ -393,6 +438,7 @@ def process_run(run_num):
         .values
     )
     x = torch.tensor(node_features, dtype=torch.float)
+    print(all_nodes_df.head())
 
     sensor_ids = sensor_df["sensor_id"].unique()
     vertex_ids = building_df["vertex_id"].unique()
@@ -438,6 +484,7 @@ def process_run(run_num):
     labels[label_df["index"]] = torch.tensor(
         label_df["hb_solar_radiation"].values, dtype=torch.float
     )
+    print(label_df.head())
 
     if pipeline_mode == "training":
         # Creating the Data object for training
@@ -461,7 +508,7 @@ def process_run(run_num):
 
 
 # Loop to process a range of runs
-for i in range(55, 56):
+for i in range(180, 181):
     run_number = f"run_{i}"
     print("-" * 50)
     print(f"Processing {run_number}...")
