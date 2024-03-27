@@ -123,18 +123,23 @@ def train(model, optimizer, batch):
     return loss.item()
 
 
-def test(model, batch, placeholder_value):
+def test(model, batch):
     model.eval()
     with torch.no_grad():
         out = model(batch.x, batch.edge_index)
-        out = out.squeeze()
+        out = out.squeeze()  # Full model output
 
-        # Apply the test mask to select the output and labels for the test nodes
-        test_mask = batch.test_mask
-        valid_out = out[test_mask]
-        valid_labels = batch.y[test_mask]
+        # Assuming labeled nodes correspond to the first 'N' entries in your labels 'y'
+        # and 'out' tensor has predictions for all nodes.
+        # You need to align 'out' with the labeled nodes before applying the mask.
+        # This example assumes the labeled nodes are the first ones matching the length of 'y'.
+        labeled_out = out[: len(batch.y)]
 
-        test_loss = F.mse_loss(valid_out, valid_labels).item()
+        # Now, apply the test mask to select the output for the test nodes
+        test_out = labeled_out[batch.test_mask]
+        valid_labels = batch.y[batch.test_mask]
+
+        test_loss = F.mse_loss(test_out, valid_labels).item()
 
     return test_loss
 
@@ -196,50 +201,88 @@ else:
 
 # Using Adam optimizer, lr = learning rate
 optimizer = optim.Adam(model.parameters(), lr=0.01, weight_decay=0.01)
+# optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.01)
 
 
 extended_test_mask = None
 
 
-## Training Loop
+## Training and Testing Loop
 
 train_losses, test_losses, average_epoch_losses = [], [], []
 
 for epoch in range(100):  # Example epoch count
     epoch_loss = 0
-    for i, data_list in enumerate(graph_data_objects):
-        n_sensors = num_labeled_nodes_list[
-            i
-        ]  # Assuming a corresponding count for each sublist in graph_data_objects
-        for data in data_list:
-            if isinstance(data, Data):
-                batch_data = data.to(
-                    device
-                )  # Move each Data object in the sublist to the appropriate device
-                train_loss = train(
-                    model,
-                    optimizer,
-                    batch_data,
-                )
-                epoch_loss += train_loss
-    average_loss = epoch_loss / len(graph_data_objects)
-    average_epoch_losses.append(average_loss)  # Append the average loss for this epoch
-    print(f"Epoch {epoch+1}, Average Loss: {average_loss}")
+    for (
+        data_list
+    ) in (
+        graph_data_objects
+    ):  # 'graph_data_objects' is a list of lists of 'Data' objects
+        for data in data_list:  # Iterate through each 'Data' object
+            data = data.to(device)  # Move the 'Data' object to the appropriate device
+            train_loss = train(model, optimizer, data)
+            epoch_loss += train_loss
+    average_loss = epoch_loss / sum(len(data_list) for data_list in graph_data_objects)
+    average_epoch_losses.append(average_loss)
+
+    # Calculate test loss at the end of the epoch
+    model.eval()
+    test_epoch_loss = 0
+    with torch.no_grad():
+        for data_list in graph_data_objects:  # Reuse 'graph_data_objects' for testing
+            for data in data_list:  # Iterate through each 'Data' object for testing
+                data = data.to(device)  # Ensure data is on the correct device
+                test_loss = test(
+                    model, data
+                )  # Assumes your 'test' function uses 'test_mask'
+                test_epoch_loss += test_loss
+    average_test_loss = test_epoch_loss / sum(
+        len(data_list) for data_list in graph_data_objects
+    )
+    test_losses.append(average_test_loss)
+
+    print(
+        f"Epoch {epoch+1}, Average Train Loss: {average_loss:.2f}, Average Test Loss: {average_test_loss:.2f}"
+    )
 
 
-## Print Test Loss
-if extended_test_mask is not None:
-    test_loss = test(model, data, extended_test_mask)
-    print(f"Test Loss: {test_loss:.2f}")
-
-# After the training loop, plot the average loss per epoch
+# Plotting
 plt.figure(figsize=(10, 6))
-plt.plot(range(1, 101), average_epoch_losses, marker="o", linestyle="-", color="b")
+
+# Plotting the average training loss per epoch.
+# 'average_epoch_losses' contains the average loss for each epoch during the training phase.
+plt.plot(
+    range(
+        1, len(average_epoch_losses) + 1
+    ),  # Ensure x-axis matches the number of epochs recorded
+    average_epoch_losses,
+    marker="o",
+    linestyle="-",
+    color="b",
+    label="Training Loss",
+)
+
+# Plotting the average test loss per epoch.
+# 'test_losses' contains the average loss for each epoch during the testing phase.
+# Note: It's important that the length of 'test_losses' matches 'average_epoch_losses'.
+plt.plot(
+    range(
+        1, len(test_losses) + 1
+    ),  # Ensure x-axis matches the number of epochs recorded for consistency
+    test_losses,
+    marker="s",
+    linestyle="--",
+    color="r",
+    label="Test Loss",
+)
+
 plt.title("Average Loss per Epoch")
 plt.xlabel("Epoch")
-plt.ylabel("Average Loss")
+plt.ylabel("Loss")
+plt.legend()
 plt.grid(True)
 plt.show()
+
 
 ## Save the Model
 file_path = rf"data\1_pytorch_model\model.pth"

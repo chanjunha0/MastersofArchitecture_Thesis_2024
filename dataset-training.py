@@ -1,36 +1,76 @@
+"""
+Code Structure:
+1. Import necessary libraries
+2. Define functions to normalize data and process each run
+3. Loop over the range of runs and process each run 'process_run'
+- load CSV files
+- append material properties
+- combine building DataFrames
+- extract vertex lengths
+- map sensors ID to vertices ID
+- append distance values to mapped df
+- combine sensor and building DataFrames
+- prepare node features
+- create continuous index for sensors and vertices
+- adjust vertex_id in edge_df
+- map sensor_id and vertex_id to their respective indices
+- filter out any edges that couldn't be mapped
+- convert to torch tensor
+- ensure data type compatibility
+- update labels for sensors with their radiation values
+- create torch tensor with compatible data type
+- initialize mask tensors with zeros (False)
+- example strategy: simple split (e.g., 80% train, 20% test) for labeled nodes
+- creating the Data object for training or prediction
+4. Print completion message
+"""
+
 import os
 import pandas as pd
 import torch
 from torch_geometric.data import Data
 import json
+import numpy as np
+import csv
 
 # Define the mode at the start of your code
 pipeline_mode = "training"  # Change to "prediction/training" when needed
 norm_params_path = r"C:\Users\colin\OneDrive\Desktop\Thesis Part 2\thesis - simulation\data\6_normalisation"
 
-# Load normalization parameters
-norm_params = {
-    "building": json.load(
-        open(os.path.join(norm_params_path, "building_norm_params.json"), "r")
-    ),
-    "distance": json.load(
-        open(os.path.join(norm_params_path, "distance_norm_params.json"), "r")
-    ),
-    "label": json.load(
-        open(os.path.join(norm_params_path, "label_norm_params.json"), "r")
-    ),
-    "sensor": json.load(
-        open(os.path.join(norm_params_path, "sensor_norm_params.json"), "r")
-    ),
-}
+# # Load normalization parameters
+# norm_params = {
+#     "building": json.load(
+#         open(os.path.join(norm_params_path, "building_norm_params.json"), "r")
+#     ),
+#     "distance": json.load(
+#         open(os.path.join(norm_params_path, "distance_norm_params.json"), "r")
+#     ),
+#     "label": json.load(
+#         open(os.path.join(norm_params_path, "label_norm_params.json"), "r")
+#     ),
+#     "sensor": json.load(
+#         open(os.path.join(norm_params_path, "sensor_norm_params.json"), "r")
+#     ),
+# }
 
 
-# Function to normalize given columns of a DataFrame with specified mean and std
-def normalize_df(df, means, stds):
-    return (df - means) / stds
+# # Function to normalize given columns of a DataFrame with specified mean and std
+# def normalize_df(df, means, stds):
+#     return (df - means) / stds
+
+# Path to the CSV containing labeled nodes info
+labels_info_path = r"data\torch_data_object_training\labels_info.csv"
 
 
-def process_run(run_num):
+# Load the number of labeled nodes from the first column of the CSV
+labels_info = pd.read_csv(labels_info_path, header=None, usecols=[0])
+num_labeled_nodes_list = [int(x) for x in labels_info[0].tolist()]
+
+
+training_mask_log = pd.DataFrame(columns=["Run", "Training Indices"])
+
+
+def process_run(run_num, num_labeled_nodes):
     file_path_training = rf"data\csv_training\{run_num}"
     filename_training = rf"data\torch_data_object_training\{run_num}.pt"
     filename_prediction = rf"data\torch_data_object_prediction\{run_num}.pt"
@@ -59,34 +99,6 @@ def process_run(run_num):
 
     # Load and normalize CSV data
     dfs = {}  # Store normalized DataFrames here
-
-    for file_name in file_names:
-        full_path = os.path.join(file_path_training.format(run_num=run_num), file_name)
-        # Check if file exists and is not empty
-        if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
-            df = pd.read_csv(full_path, header=None)
-
-            # Determine which normalization parameters to use based on the file type
-            if "sensor" in file_name:
-                df.iloc[:, 0:3] = (
-                    df.iloc[:, 0:3] - norm_params["sensor"]["mean"]
-                ) / norm_params["sensor"]["std"]
-            elif file_name == "label.csv":
-                df.iloc[:, 0] = (
-                    df.iloc[:, 0] - norm_params["label"]["mean"][0]
-                ) / norm_params["label"]["std"][0]
-            elif "distance" in file_name:
-                df.iloc[:, 0] = (
-                    df.iloc[:, 0] - norm_params["distance"]["mean"][0]
-                ) / norm_params["distance"]["std"][0]
-            elif "building" in file_name:
-                df.iloc[:, 0:3] = (
-                    df.iloc[:, 0:3] - norm_params["building"]["mean"]
-                ) / norm_params["building"]["std"]
-
-            dfs[file_name.split(".")[0]] = df
-        else:
-            print(f"Skipped missing or empty file: {full_path}")
 
     # Dictionary mapping DataFrame names to material names
     df_material_map = {
@@ -131,20 +143,6 @@ def process_run(run_num):
             print(name)
             print(df.head())
             print(line)
-
-    def check_nulls_in_dfs(dfs):
-        """
-        Checks for null values in each DataFrame within a dictionary and prints a message indicating the presence of null values.
-
-        Args:
-        - dfs (dict): A dictionary where each key is the name of a DataFrame and each value is the DataFrame object.
-        """
-        for df_name, df in dfs.items():
-            # Check if there are any null values in the DataFrame
-            if df.isnull().values.any():
-                print(f"Null values found in '{df_name}' DataFrame.")
-            else:
-                print(f"No null values in '{df_name}' DataFrame.")
 
     def format_and_insert_id_column(df, id_base_name):
         """
@@ -193,8 +191,8 @@ def process_run(run_num):
                 # Construct the DataFrame name and load the CSV file into a DataFrame
                 df_name = f"{file_name}_df"
                 dataframes[df_name] = pd.read_csv(file_path, header=None)
-            else:
-                print(f"Skipped empty file: {file_name}.csv")
+            # else:
+            #     # print(f"Skipped empty file: {file_name}.csv")
 
         return dataframes
 
@@ -235,8 +233,8 @@ def process_run(run_num):
                     ],
                     axis=1,
                 )
-            else:
-                print(f"Skipped empty or missing DataFrame: {df_name}")
+            # else:
+            #     print(f"Skipped empty or missing DataFrame: {df_name}")
 
         return dfs
 
@@ -265,10 +263,10 @@ def process_run(run_num):
                     combined_df = pd.concat(
                         [combined_df, dfs[df_name]], ignore_index=True
                     )
-            else:
-                print(
-                    f"DataFrame name '{df_name}' not found in the dictionary. Skipping..."
-                )
+            # else:
+            #     print(
+            #         f"DataFrame name '{df_name}' not found in the dictionary. Skipping..."
+            #     )
 
         return combined_df
 
@@ -292,8 +290,8 @@ def process_run(run_num):
                     0, 0
                 ]  # Extract the first value of the DataFrame
                 values_dict[df_name] = value
-            else:
-                print(f"DataFrame '{df_name}' does not exist or is empty. Skipping...")
+            # else:
+            #     print(f"DataFrame '{df_name}' does not exist or is empty. Skipping...")
 
         return values_dict
 
@@ -353,11 +351,11 @@ def process_run(run_num):
                         f"Warning: Not enough distance values for {material}, distances not appended."
                     )
                 mapped_dfs[mapped_df_name] = mapped_df
-            else:
-                # Print a warning if the distance DataFrame is not found
-                print(
-                    f"Warning: Distance DataFrame for '{material}' not found, skipping."
-                )
+            # else:
+            #     # Print a warning if the distance DataFrame is not found
+            #     print(
+            #         f"Warning: Distance DataFrame for '{material}' not found, skipping."
+            #     )
 
         return mapped_dfs
 
@@ -367,9 +365,6 @@ def process_run(run_num):
     # Import Material Library and append to dfs dictionary of dataframes
     material_df = pd.read_csv(r"data\material\material_library.csv")
     dfs["material"] = material_df
-
-    # Check for Null Values
-    check_nulls_in_dfs(dfs)
 
     dfs = append_material_properties(dfs, material_df, df_material_map)
 
@@ -438,7 +433,6 @@ def process_run(run_num):
         .values
     )
     x = torch.tensor(node_features, dtype=torch.float)
-    print(all_nodes_df.head())
 
     sensor_ids = sensor_df["sensor_id"].unique()
     vertex_ids = building_df["vertex_id"].unique()
@@ -484,36 +478,88 @@ def process_run(run_num):
     labels[label_df["index"]] = torch.tensor(
         label_df["hb_solar_radiation"].values, dtype=torch.float
     )
-    print(label_df.head())
+
+    placeholder_value = -1
+
+    # Initialize mask tensors with zeros (False)
+    train_mask = torch.zeros(len(sensor_ids), dtype=torch.bool)
+    test_mask = torch.zeros(len(sensor_ids), dtype=torch.bool)
+
+    # Example strategy: Use num_labeled_nodes for the current run to create masks
+    labeled_indices = torch.arange(
+        num_labeled_nodes
+    )  # Assuming sequential labeling from 0
+
+    # Random split for simplicity; consider a more sophisticated approach for real applications
+    np.random.shuffle(labeled_indices.numpy())  # Convert to NumPy array for shuffling
+    split_point = int(len(labeled_indices) * 0.8)
+
+    train_indices = labeled_indices[:split_point]
+    test_indices = labeled_indices[split_point:]
+
+    train_mask[train_indices] = True
+    test_mask[test_indices] = True
+
+    # labels[~train_mask & ~test_mask] = placeholder_value   #not needed as every node in label is used
+
+    # Assuming 'train_mask' is a torch.Tensor
+    train_indices = train_mask.nonzero(as_tuple=False).view(-1).tolist()
+
+    # Append run number and training indices to the log
+    training_mask_log.loc[len(training_mask_log)] = [run_num, train_indices]
+
+    # Assuming train_mask and test_mask are your mask tensors
+    num_train = train_mask.sum().item()
+    num_test = test_mask.sum().item()
+    total = len(train_mask)  # or test_mask, they are the same size
+
+    print(f"Training nodes: {num_train} ({num_train/total*100:.2f}%)")
+    print(f"Testing nodes: {num_test} ({num_test/total*100:.2f}%)")
 
     if pipeline_mode == "training":
         # Creating the Data object for training
-        data_training = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=labels)
+        data_training = Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            y=labels,
+            train_mask=train_mask,
+            test_mask=test_mask,
+        )
         print("Data Object for Training:")
         print(data_training)
-
-        # Saving the training data
         torch.save(data_training, filename_training)
-        print(f"Training data saved as {filename_training}")
+        # print(f"Training data saved as {filename_training}")
 
     elif pipeline_mode == "prediction":
         # Creating the Data object for prediction (without labels)
-        data_predict = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        data_predict = Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            # No y, train_mask, or test_mask needed for prediction
+        )
         print("Data Object for Prediction:")
         print(data_predict)
-
-        # Saving the prediction data
         torch.save(data_predict, filename_prediction)
-        print(f"Prediction data saved as {filename_prediction}")
+        # print(f"Prediction data saved as {filename_prediction}")
 
 
-# Loop to process a range of runs
-for i in range(180, 181):
+# Loop to process a range of runs, ensuring num_labeled_nodes is passed correctly
+for i in range(1, 181):
     run_number = f"run_{i}"
+    num_labeled_nodes = num_labeled_nodes_list[
+        i - 1
+    ]  # Assuming the list is in the same order as the runs
     print("-" * 50)
-    print(f"Processing {run_number}...")
-    process_run(run_number)
+    print(f"Processing {run_number} with {num_labeled_nodes} labeled nodes...")
+    process_run(run_number, num_labeled_nodes)
     print(f"Completed processing {run_number}.\n")
     print("-" * 50)
+
+# Export the training mask log to a CSV file
+training_mask_log.to_csv(
+    r"data\torch_data_object_training\training_mask_log.csv", index=False
+)
 
 print("All runs processed.")
