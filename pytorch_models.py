@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch_geometric.nn import GCNConv, GATConv, EdgeCNN
+from torch_geometric.nn import GCNConv, GATConv, EdgeCNN, BatchNorm
 from torch_geometric.nn import MessagePassing
 import torch.nn.functional as F
 from torch_geometric.nn.inits import reset
@@ -10,7 +10,7 @@ from torch_geometric.nn import EdgeConv
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.typing import SparseTensor
-from torch_geometric.utils import _spmm, sparse
+from torch_geometric.utils import spmm, sparse
 
 
 ## Classes
@@ -77,6 +77,53 @@ class SimpleGCN(torch.nn.Module):
         x = self.conv3(x, edge_index)  # Final GCN layer for predictions
 
         return x  # Model's predictions for each node
+
+
+class ComplexGCN(torch.nn.Module):
+    def __init__(self, num_node_features, num_classes, dropout_rate=0.5):
+        """
+        Initializes a model that processes graph-structured data using
+        a more complex GCN architecture with additional layers and batch normalization.
+
+        Args:
+            num_node_features: Number of features each node in the input graph has.
+            num_classes: Number of output classes.
+            dropout_rate: Probability of an element to be zeroed.
+        """
+        super(ComplexGCN, self).__init__()
+        # Increase the width of layers
+        self.conv1 = GCNConv(num_node_features, 64)  # First GCN layer
+        self.bn1 = BatchNorm(64)  # Batch normalization after the first layer
+        self.conv2 = GCNConv(64, 128)  # Second GCN layer
+        self.bn2 = BatchNorm(128)  # Batch normalization after the second layer
+        # Adding more layers
+        self.conv3 = GCNConv(128, 64)  # Third GCN layer
+        self.bn3 = BatchNorm(64)  # Batch normalization after the third layer
+        self.conv4 = GCNConv(64, 32)  # Fourth GCN layer
+        self.bn4 = BatchNorm(32)  # Batch normalization after the fourth layer
+        self.conv5 = GCNConv(32, num_classes)  # Final GCN layer for predictions
+
+        self.dropout_rate = dropout_rate
+
+    def forward(self, x, edge_index):
+        """
+        Defines the forward pass of the model.
+
+        Args:
+            x: Node features of shape [num_nodes, num_node_features].
+            edge_index: Graph connectivity in COO format with shape [2, num_edges]. 
+        """
+        x = F.relu(self.bn1(self.conv1(x, edge_index)))
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        x = F.relu(self.bn2(self.conv2(x, edge_index)))
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        x = F.relu(self.bn3(self.conv3(x, edge_index)))
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        x = F.relu(self.bn4(self.conv4(x, edge_index)))
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)
+        x = self.conv5(x, edge_index)  # No activation after the last layer
+
+        return x
 
 
 class SimpleGAT(torch.nn.Module):

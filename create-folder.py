@@ -21,6 +21,6 @@ def create_folders(start, end, base_path):
             print(f"Folder already exists: {folder_path}")
 
 
-base_path = r"data\csv_training"
+base_path = r"data\csv_training_raw"
 
-create_folders(145, 180, base_path)
+create_folders(181, 216, base_path)

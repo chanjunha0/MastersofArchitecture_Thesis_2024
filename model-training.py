@@ -17,7 +17,7 @@ from math import sqrt
 import matplotlib.pyplot as plt
 import time
 import csv
-from pytorch_models import SimpleGCN, SimpleGAT, SimpleEdgeCNN
+from pytorch_models import SimpleGCN, SimpleGAT, SimpleEdgeCNN, ComplexGCN
 import torch.optim as optim
 
 # Set folder path for pytorch data objects
@@ -32,9 +32,7 @@ model_path = r"data\1_pytorch_model\model.pth"
 losses_file_path = r"data\training_and_test_losses.csv"
 
 # Specify model type
-model_type = (
-    SimpleGCN  # Choose from 'SimpleGCN', 'SimpleGAT', 'SimpleEdgeCNN', 'PointGNNConv',
-)
+model_type = ComplexGCN
 
 
 # Placeholder value for unlabeled nodes - adjust as necessary.
@@ -242,7 +240,7 @@ for epoch in range(100):  # Example epoch count
     test_losses.append(average_test_loss)
 
     print(
-        f"Epoch {epoch+1}, Average Train Loss: {average_loss:.2f}, Average Test Loss: {average_test_loss:.2f}"
+        f"Epoch {epoch+1}, Average Train Loss: {average_loss:.4f}, Average Test Loss: {average_test_loss:.4f}"
     )
 
 
@@ -276,13 +274,6 @@ plt.plot(
     label="Test Loss",
 )
 
-plt.title("Average Loss per Epoch")
-plt.xlabel("Epoch")
-plt.ylabel("Loss")
-plt.legend()
-plt.grid(True)
-plt.show()
-
 
 ## Save the Model
 file_path = rf"data\1_pytorch_model\model.pth"
@@ -305,7 +296,14 @@ print(
 with open(losses_file_path, "w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow(["Epoch", "Train Loss", "Test Loss"])
-    for epoch in range(100):
+    for epoch in range(min(len(train_losses), len(test_losses))):
         writer.writerow([epoch + 1, train_losses[epoch], test_losses[epoch]])
 
 print("Losses saved.")
+
+plt.title("Average Loss per Epoch")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()

@@ -35,31 +35,12 @@ import csv
 
 # Define the mode at the start of your code
 pipeline_mode = "training"  # Change to "prediction/training" when needed
-norm_params_path = r"C:\Users\colin\OneDrive\Desktop\Thesis Part 2\thesis - simulation\data\6_normalisation"
-
-# # Load normalization parameters
-# norm_params = {
-#     "building": json.load(
-#         open(os.path.join(norm_params_path, "building_norm_params.json"), "r")
-#     ),
-#     "distance": json.load(
-#         open(os.path.join(norm_params_path, "distance_norm_params.json"), "r")
-#     ),
-#     "label": json.load(
-#         open(os.path.join(norm_params_path, "label_norm_params.json"), "r")
-#     ),
-#     "sensor": json.load(
-#         open(os.path.join(norm_params_path, "sensor_norm_params.json"), "r")
-#     ),
-# }
-
-
-# # Function to normalize given columns of a DataFrame with specified mean and std
-# def normalize_df(df, means, stds):
-#     return (df - means) / stds
 
 # Path to the CSV containing labeled nodes info
-labels_info_path = r"data\torch_data_object_training\labels_info.csv"
+if pipeline_mode == "training":
+    labels_info_path = r"data\torch_data_object_training\labels_info.csv"
+elif pipeline_mode == "prediction":
+    labels_info_path = r"data\torch_data_object_prediction\labels_info.csv"
 
 
 # Load the number of labeled nodes from the first column of the CSV
@@ -72,6 +53,7 @@ training_mask_log = pd.DataFrame(columns=["Run", "Training Indices"])
 
 def process_run(run_num, num_labeled_nodes):
     file_path_training = rf"data\csv_training\{run_num}"
+    file_path_prediction = rf"data\csv_prediction\{run_num}"
     filename_training = rf"data\torch_data_object_training\{run_num}.pt"
     filename_prediction = rf"data\torch_data_object_prediction\{run_num}.pt"
 
@@ -95,6 +77,8 @@ def process_run(run_num, num_labeled_nodes):
         "vertex_length_conc",
         "vertex_length_glass",
         "vertex_length_wood",
+        "normal",
+        "angle_degree",
     ]
 
     # Load and normalize CSV data
@@ -360,7 +344,10 @@ def process_run(run_num, num_labeled_nodes):
         return mapped_dfs
 
     # Call function to import csv and convert to dataframe, storing them in a dictionary
-    dfs = load_csv_files_as_dict(file_path_training, file_names)
+    if pipeline_mode == "training":
+        dfs = load_csv_files_as_dict(file_path_training, file_names)
+    elif pipeline_mode == "prediction":
+        dfs = load_csv_files_as_dict(file_path_prediction, file_names)
 
     # Import Material Library and append to dfs dictionary of dataframes
     material_df = pd.read_csv(r"data\material\material_library.csv")
@@ -393,18 +380,43 @@ def process_run(run_num, num_labeled_nodes):
 
     sensor_df.rename(
         columns={
-            0: "sensor_x_coordinate",
-            1: "sensor_y_coordinate",
-            2: "sensor_z_coordinate",
+            0: "sensor_x_",
+            1: "sensor_y_",
+            2: "sensor_z_",
+        },
+        inplace=True,
+    )
+
+    building_df.rename(
+        columns={
+            0: "building_x",
+            1: "building_y",
+            2: "building_z",
         },
         inplace=True,
     )
 
     label_df.columns = ["sensor_id", "hb_solar_radiation"]
 
+    angle_df = dfs["angle_degree_df"]
+    normal_df = dfs["normal_df"]
+
+    normal_df = normal_df.applymap(lambda x: x.strip("{}") if isinstance(x, str) else x)
+
+    print(angle_df.head())  # check line delete later
+    print(normal_df.head())  # check line delete later
+
     # Add a column to distinguish between sensors and vertices
     sensor_df["type"] = "sensor"
     building_df["type"] = "vertex"
+
+    # Copy the first column of 'angle_df' to a new column in 'sensor_df'
+    sensor_df["angle"] = angle_df.iloc[:, 0]
+
+    # Copy the first three columns of 'normal_df' to new columns in 'sensor_df'
+    sensor_df["normal_x"] = normal_df.iloc[:, 0]
+    sensor_df["normal_y"] = normal_df.iloc[:, 1]
+    sensor_df["normal_z"] = normal_df.iloc[:, 2]
 
     # Combine dataframes
     all_nodes_df = pd.concat(
@@ -420,19 +432,41 @@ def process_run(run_num, num_labeled_nodes):
     all_nodes_df["type_flag"] = all_nodes_df["type"].apply(
         lambda x: 1 if x == "sensor" else 0
     )
+
+    print(all_nodes_df.head())  # check line delete later
+
     node_features = (
         all_nodes_df[
             [
-                "sensor_x_coordinate",
-                "sensor_y_coordinate",
-                "sensor_z_coordinate",
+                "sensor_x_",
+                "sensor_y_",
+                "sensor_z_",
                 "type_flag",
+                "angle",
+                "normal_x",
+                "normal_y",
+                "normal_z",
+                "building_x",
+                "building_y",
+                "building_z",
+                "r_ref",
+                "g_ref",
+                "b_ref",
+                "spec",
+                "rough",
             ]
         ]
         .fillna(0)
         .values
     )
-    x = torch.tensor(node_features, dtype=torch.float)
+
+    # Convert all elements to numeric type
+    node_features_numeric = np.array(
+        [[float(val) for val in row] for row in node_features]
+    )
+
+    # Create PyTorch tensor
+    x = torch.tensor(node_features_numeric, dtype=torch.float)
 
     sensor_ids = sensor_df["sensor_id"].unique()
     vertex_ids = building_df["vertex_id"].unique()
@@ -546,7 +580,7 @@ def process_run(run_num, num_labeled_nodes):
 
 
 # Loop to process a range of runs, ensuring num_labeled_nodes is passed correctly
-for i in range(1, 181):
+for i in range(1, 2):
     run_number = f"run_{i}"
     num_labeled_nodes = num_labeled_nodes_list[
         i - 1

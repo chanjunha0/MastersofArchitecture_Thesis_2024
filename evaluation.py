@@ -1,3 +1,9 @@
+"""
+This script is used to evaluate the performance of a model on a new dataset.
+"""
+
+# reminder to reverse-normalise the predictions csv before evaluation
+
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, r2_score
 import matplotlib.pyplot as plt
@@ -13,11 +19,11 @@ label_actual_df = pd.read_csv(
     f"data/2_prediction_testing/actual_label_{run_num}.csv", header=None
 )
 
+
 # Predicted labels
 label_predict_df = pd.read_csv(
-    f"data/2_prediction_testing/averaged_predictions_{run_num}.csv", header=None
+    f"data/2_prediction_testing/model_predictions_{run_num}.csv", header=None
 )
-print("Files imported")
 
 actual_values = label_actual_df.iloc[
     :, 0
