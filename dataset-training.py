@@ -401,10 +401,12 @@ def process_run(run_num, num_labeled_nodes):
     angle_df = dfs["angle_degree_df"]
     normal_df = dfs["normal_df"]
 
-    normal_df = normal_df.applymap(lambda x: x.strip("{}") if isinstance(x, str) else x)
+    normal_df = normal_df.apply(
+        lambda x: x.map(lambda x: x.strip("{}") if isinstance(x, str) else x)
+    )
 
-    print(angle_df.head())  # check line delete later
-    print(normal_df.head())  # check line delete later
+    # print(angle_df.head())  # check line delete later
+    # print(normal_df.head())  # check line delete later
 
     # Add a column to distinguish between sensors and vertices
     sensor_df["type"] = "sensor"
@@ -433,15 +435,14 @@ def process_run(run_num, num_labeled_nodes):
         lambda x: 1 if x == "sensor" else 0
     )
 
-    print(all_nodes_df.head())  # check line delete later
+    # print(all_nodes_df.head())  # check line delete later
 
-    node_features = (
+    node_features = (  # List of features to add from the overall df check this later!!!!!
         all_nodes_df[
             [
                 "sensor_x_",
                 "sensor_y_",
                 "sensor_z_",
-                "type_flag",
                 "angle",
                 "normal_x",
                 "normal_y",
@@ -454,6 +455,7 @@ def process_run(run_num, num_labeled_nodes):
                 "b_ref",
                 "spec",
                 "rough",
+                "type_flag",
             ]
         ]
         .fillna(0)
@@ -580,7 +582,7 @@ def process_run(run_num, num_labeled_nodes):
 
 
 # Loop to process a range of runs, ensuring num_labeled_nodes is passed correctly
-for i in range(1, 2):
+for i in range(288, 361):
     run_number = f"run_{i}"
     num_labeled_nodes = num_labeled_nodes_list[
         i - 1

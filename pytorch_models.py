@@ -79,6 +79,38 @@ class SimpleGCN(torch.nn.Module):
         return x  # Model's predictions for each node
 
 
+class SimplifiedGCN(torch.nn.Module):
+    def __init__(self, num_node_features, num_classes, dropout_rate=0.5):
+        """
+        Initializes a simpler model for processing graph-structured data using
+        a two-layer GCN architecture.
+
+        Args:
+            num_node_features: Number of features each node in the input graph has.
+            num_classes: Number of output classes.
+            dropout_rate: Probability of an element to be zeroed.
+        """
+        super(SimplifiedGCN, self).__init__()
+        self.conv1 = GCNConv(num_node_features, 16)  # First GCN layer
+        self.conv2 = GCNConv(
+            16, num_classes
+        )  # Second GCN layer directly leading to output classes
+        self.dropout_rate = dropout_rate  # Dropout rate
+
+    def forward(self, x, edge_index):
+        """
+        Defines the forward pass of the model.
+
+        Args:
+            x: Node features of shape [num_nodes, num_node_features].
+            edge_index: Graph connectivity in COO format with shape [2, num_edges].
+        """
+        x = F.relu(self.conv1(x, edge_index))  # Apply ReLU after the first GCN layer
+        x = F.dropout(x, p=self.dropout_rate, training=self.training)  # Apply dropout
+        x = self.conv2(x, edge_index)  # Second GCN layer for predictions
+        return x  # Model's predictions for each node
+
+
 class ComplexGCN(torch.nn.Module):
     def __init__(self, num_node_features, num_classes, dropout_rate=0.5):
         """
@@ -111,7 +143,7 @@ class ComplexGCN(torch.nn.Module):
 
         Args:
             x: Node features of shape [num_nodes, num_node_features].
-            edge_index: Graph connectivity in COO format with shape [2, num_edges]. 
+            edge_index: Graph connectivity in COO format with shape [2, num_edges].
         """
         x = F.relu(self.bn1(self.conv1(x, edge_index)))
         x = F.dropout(x, p=self.dropout_rate, training=self.training)

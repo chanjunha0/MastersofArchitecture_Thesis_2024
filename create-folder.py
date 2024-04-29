@@ -23,4 +23,4 @@ def create_folders(start, end, base_path):
 
 base_path = r"data\csv_training_raw"
 
-create_folders(181, 216, base_path)
+create_folders(361, 432, base_path)

@@ -17,8 +17,15 @@ from math import sqrt
 import matplotlib.pyplot as plt
 import time
 import csv
-from pytorch_models import SimpleGCN, SimpleGAT, SimpleEdgeCNN, ComplexGCN
+from pytorch_models import (
+    SimpleGCN,
+    SimpleGAT,
+    SimpleEdgeCNN,
+    ComplexGCN,
+    SimplifiedGCN,
+)
 import torch.optim as optim
+import datetime
 
 # Set folder path for pytorch data objects
 folder_path = r"data\torch_data_object_training"
@@ -32,7 +39,7 @@ model_path = r"data\1_pytorch_model\model.pth"
 losses_file_path = r"data\training_and_test_losses.csv"
 
 # Specify model type
-model_type = ComplexGCN
+model_type = SimplifiedGCN
 
 
 # Placeholder value for unlabeled nodes - adjust as necessary.
@@ -147,18 +154,25 @@ start_time = time.time()
 print(start_time)
 
 # SPECIFY THE RANGE OF PT HERE
-ranges = [
-    (1, 18),
-    (19, 36),
-    (37, 55),
-    (56, 72),
-    (73, 91),
-    (92, 109),
-    (110, 127),
-    (128, 145),
-    (146, 163),
-    (164, 180),
-]
+# ranges = [
+#     (1, 18),
+#     (19, 36),
+#     (37, 55),
+#     (56, 72),
+#     (73, 91),
+#     (92, 109),
+#     (110, 127),
+#     (128, 145),
+#     (146, 163),
+#     (164, 180),
+#     (181, 198),
+#     (199, 216),
+# ]
+
+total_objects = 72
+
+# Generate ranges to load each object one by one
+ranges = [(i, i) for i in range(1, total_objects + 1)]
 
 # Load graph data objects
 graph_data_objects = load_graph_data_objects(folder_path, ranges)
@@ -209,7 +223,13 @@ extended_test_mask = None
 
 train_losses, test_losses, average_epoch_losses = [], [], []
 
-for epoch in range(100):  # Example epoch count
+# Record Start Time before the loop
+total_start_time = time.time()
+
+for epoch in range(20):  # Example epoch count
+    # Record Start Time for the current epoch
+    epoch_start_time = time.time()
+
     epoch_loss = 0
     for (
         data_list
@@ -239,8 +259,14 @@ for epoch in range(100):  # Example epoch count
     )
     test_losses.append(average_test_loss)
 
+    # Calculate and print runtime for the epoch
+    epoch_runtime = time.time() - epoch_start_time
+
+    # Calculate total time elapsed
+    total_elapsed_time = time.time() - total_start_time
+
     print(
-        f"Epoch {epoch+1}, Average Train Loss: {average_loss:.4f}, Average Test Loss: {average_test_loss:.4f}"
+        f"Epoch {epoch+1}, Average Train Loss: {average_loss:.2f}, Average Test Loss: {average_test_loss:.2f}, Runtime: {epoch_runtime:.2f} seconds, Total Elapsed Time: {total_elapsed_time:.2f} seconds"
     )
 
 
@@ -292,12 +318,20 @@ print(
     f"Training took {int(hours)} hours, {int(minutes)} minutes, and {seconds} seconds."
 )
 
-# Save the loss values to a CSV file
+# Get the current date and time
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+# Update the CSV file name to include the timestamp
+losses_file_path = f"data/training_and_test_losses_{timestamp}.csv"
+
+# Save the train_losses and test_losses to the CSV file
 with open(losses_file_path, "w", newline="") as file:
     writer = csv.writer(file)
-    writer.writerow(["Epoch", "Train Loss", "Test Loss"])
-    for epoch in range(min(len(train_losses), len(test_losses))):
-        writer.writerow([epoch + 1, train_losses[epoch], test_losses[epoch]])
+    writer.writerow(["Epoch", "Training Loss", "Test Loss"])
+    for epoch, (train_loss, test_loss) in enumerate(
+        zip(average_epoch_losses, test_losses), start=1
+    ):
+        writer.writerow([epoch, train_loss, test_loss])
 
 print("Losses saved.")
 
